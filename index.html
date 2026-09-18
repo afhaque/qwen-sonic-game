@@ -333,7 +333,7 @@
         acceleration: 0.4,
         deceleration: 0.3,
         friction: 0.85,
-        jumpForce: -12,
+        jumpForce: -20,
         grounded: false,
         jumping: false,
         facing: 1,
@@ -1093,7 +1093,8 @@
                     sonic.y = p.y;
                     sonic.vy = 0;
                     sonic.grounded = true;
-                } else if (sonic.vy < 0) {
+                } else if (sonic.vy < 0 && sonic.y > p.y) {
+                    // Bonk head only if feet are still below platform — allows jumping through from below
                     sonic.y = p.y + p.h + sonic.height;
                     sonic.vy = 0;
                 }
