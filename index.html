@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic: Green Hill Rush - Built by Qwen</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            border: 4px solid #000;
+            border-radius: 8px;
+            box-shadow: 0 0 40px rgba(0, 100, 255, 0.3);
+        }
+
+        canvas {
+            display: block;
+            background: #87CEEB;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            pointer-events: all;
+            z-index: 10;
+        }
+
+        #start-screen h1 {
+            font-size: 48px;
+            color: #00AAFF;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+            margin-bottom: 10px;
+        }
+
+        #start-screen h2 {
+            font-size: 24px;
+            color: #FFD700;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            font-size: 22px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.1s;
+            pointer-events: all;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        #start-btn {
+            background: linear-gradient(135deg, #00AAFF, #0066CC);
+            color: white;
+        }
+
+        #restart-btn {
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: #333;
+        }
+
+        #game-over-screen h2 {
+            font-size: 42px;
+            color: #FF4444;
+            margin-bottom: 20px;
+        }
+
+        #game-over-screen p {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .controls-info {
+            margin-top: 30px;
+            text-align: center;
+            color: #aaa;
+            font-size: 16px;
+            line-height: 1.8;
+        }
+
+        .controls-info kbd {
+            background: #444;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            font-family: monospace;
+        }
+
+        #credit {
+            position: absolute;
+            bottom: 10px;
+            right: 15px;
+            color: #555;
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+        <div id="ui-overlay">
+            <div id="score-display">SCORE: 0</div>
+            <div id="rings-display">RINGS: 0</div>
+            <div id="lives-display">LIVES: 3</div>
+        </div>
+        <div id="start-screen">
+            <h1>SONIC</h1>
+            <h2>Green Hill Rush</h2>
+            <button class="btn" id="start-btn">START GAME</button>
+            <div class="controls-info">
+                <p><kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> — Move</p>
+                <p><kbd>Space</kbd> or <kbd>↑</kbd> or <kbd>W</kbd> — Jump</p>
+                <p><kbd>Shift</kbd> — Speed Boost</p>
+                <p>Collect rings, stomp enemies, reach the goal!</p>
+            </div>
+        </div>
+        <div id="game-over-screen" style="display:none;">
+            <h2 id="game-over-title">GAME OVER</h2>
+            <p id="final-score"></p>
+            <p id="final-rings"></p>
+            <button class="btn" id="restart-btn">PLAY AGAIN</button>
+        </div>
+        <div id="credit">Built by Qwen</div>
+    </div>
+
+    <script>
+    // ============== GAME ENGINE ==============
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // ============== AUDIO ENGINE ==============
+    class AudioEngine {
+        constructor() {
+            this.ctx = null;
+            this.initialized = false;
+        }
+
+        init() {
+            if (this.initialized) return;
+            try {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                this.initialized = true;
+            } catch(e) {
+                console.log('Audio not available');
+            }
+        }
+
+        play(type) {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            const now = this.ctx.currentTime;
+
+            switch(type) {
+                case 'ring':
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, now);
+                    osc.frequency.exponentialRampToValueAtTime(1760, now + 0.1);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                    break;
+                case 'jump':
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(400, now + 0.15);
+                    gain.gain.setValueAtTime(0.08, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                    break;
+                case 'stomp':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                    osc.start(now);
+                    osc.stop(now + 0.12);
+                    break;
+                case 'hurt':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(200, now);
+                    osc.frequency.exponentialRampToValueAtTime(50, now + 0.4);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                    break;
+                case 'levelup':
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(440, now);
+                    osc.frequency.setValueAtTime(554, now + 0.1);
+                    osc.frequency.setValueAtTime(659, now + 0.2);
+                    osc.frequency.setValueAtTime(880, now + 0.3);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                    break;
+                case 'boost':
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(100, now);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + 0.2);
+                    gain.gain.setValueAtTime(0.06, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                    break;
+            }
+        }
+    }
+
+    const audio = new AudioEngine();
+
+    // ============== INPUT ==============
+    const keys = {};
+    document.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+            e.preventDefault();
+        }
+    });
+    document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    // Touch controls for mobile
+    let touchLeft = false, touchRight = false, touchJump = false, touchBoost = false;
+
+    canvas.addEventListener('touchstart', handleTouch, {passive: false});
+    canvas.addEventListener('touchmove', handleTouch, {passive: false});
+    canvas.addEventListener('touchend', e => {
+        e.preventDefault();
+        touchLeft = touchRight = touchJump = touchBoost = false;
+    });
+
+    function handleTouch(e) {
+        e.preventDefault();
+        touchLeft = touchRight = touchJump = touchBoost = false;
+        for (let t of e.touches) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (t.clientX - rect.left) / rect.width;
+            const y = (t.clientY - rect.top) / rect.height;
+            if (x < 0.25) touchLeft = true;
+            else if (x > 0.75) touchRight = true;
+            if (y < 0.5 && x > 0.3 && x < 0.7) touchJump = true;
+            if (x > 0.6 && x < 0.9 && y > 0.5) touchBoost = true;
+        }
+    }
+
+    function isLeft() { return keys['ArrowLeft'] || keys['KeyA'] || touchLeft; }
+    function isRight() { return keys['ArrowRight'] || keys['KeyD'] || touchRight; }
+    function isJump() { return keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || touchJump; }
+    function isBoost() { return keys['ShiftLeft'] || keys['ShiftRight'] || touchBoost; }
+
+    // ============== GAME STATE ==============
+    let game = {
+        state: 'menu', // menu, playing, gameover, win
+        score: 0,
+        rings: 0,
+        lives: 3,
+        camera: { x: 0, y: 0 },
+        levelWidth: 8000,
+        particles: [],
+        screenShake: 0,
+        invincibleTimer: 0,
+        levelComplete: false,
+        goalReached: false,
+    };
+
+    // ============== SONIC (PLAYER) ==============
+    let sonic = {
+        x: 100, y: 300,
+        vx: 0, vy: 0,
+        width: 30, height: 40,
+        speed: 0,
+        maxSpeed: 6,
+        boostSpeed: 10,
+        acceleration: 0.4,
+        deceleration: 0.3,
+        friction: 0.85,
+        jumpForce: -12,
+        grounded: false,
+        jumping: false,
+        facing: 1,
+        rolling: false,
+        spinAngle: 0,
+        animFrame: 0,
+        animTimer: 0,
+        trail: [],
+    };
+
+    // ============== LEVEL DATA ==============
+    let platforms = [];
+    let rings = [];
+    let enemies = [];
+    let springs = [];
+    let goal = null;
+    let clouds = [];
+    let hills = [];
+    let decorations = [];
+
+    function generateLevel() {
+        platforms = [];
+        rings = [];
+        enemies = [];
+        springs = [];
+        clouds = [];
+        hills = [];
+        decorations = [];
+
+        // Ground segments with gaps
+        const groundSegments = [
+            {x: 0, w: 600},
+            {x: 700, w: 400},
+            {x: 1200, w: 300},
+            {x: 1600, w: 500},
+            {x: 2200, w: 200},
+            {x: 2500, w: 400},
+            {x: 3000, w: 600},
+            {x: 3700, w: 300},
+            {x: 4100, w: 500},
+            {x: 4700, w: 400},
+            {x: 5200, w: 300},
+            {x: 5600, w: 500},
+            {x: 6200, w: 400},
+            {x: 6700, w: 300},
+            {x: 7100, w: 900},
+        ];
+
+        const groundY = H - 60;
+
+        groundSegments.forEach(seg => {
+            platforms.push({
+                x: seg.x, y: groundY, w: seg.w, h: 60,
+                type: 'ground'
+            });
+        });
+
+        // Floating platforms
+        const floatingPlatforms = [
+            {x: 300, y: 350, w: 120},
+            {x: 500, y: 280, w: 100},
+            {x: 750, y: 320, w: 130},
+            {x: 950, y: 250, w: 100},
+            {x: 1100, y: 350, w: 120},
+            {x: 1350, y: 280, w: 100},
+            {x: 1500, y: 350, w: 130},
+            {x: 1750, y: 220, w: 100},
+            {x: 1950, y: 300, w: 120},
+            {x: 2100, y: 350, w: 100},
+            {x: 2350, y: 280, w: 120},
+            {x: 2600, y: 320, w: 100},
+            {x: 2800, y: 250, w: 130},
+            {x: 3100, y: 350, w: 100},
+            {x: 3300, y: 280, w: 120},
+            {x: 3500, y: 200, w: 100},
+            {x: 3800, y: 320, w: 130},
+            {x: 4000, y: 250, w: 100},
+            {x: 4300, y: 350, w: 120},
+            {x: 4500, y: 280, w: 100},
+            {x: 4800, y: 320, w: 130},
+            {x: 5000, y: 250, w: 100},
+            {x: 5300, y: 350, w: 120},
+            {x: 5500, y: 280, w: 100},
+            {x: 5800, y: 320, w: 130},
+            {x: 6000, y: 250, w: 100},
+            {x: 6300, y: 350, w: 120},
+            {x: 6500, y: 280, w: 100},
+            {x: 6800, y: 320, w: 130},
+            {x: 7000, y: 250, w: 100},
+            {x: 7300, y: 350, w: 120},
+        ];
+
+        floatingPlatforms.forEach(p => {
+            platforms.push({
+                x: p.x, y: p.y, w: p.w, h: 20,
+                type: 'floating'
+            });
+        });
+
+        // Rings
+        const ringPositions = [
+            // First section
+            {x: 200, y: 380}, {x: 250, y: 380}, {x: 300, y: 380},
+            {x: 350, y: 300}, {x: 400, y: 300}, {x: 450, y: 300},
+            {x: 500, y: 230},
+            // Second section
+            {x: 750, y: 380}, {x: 800, y: 380}, {x: 850, y: 380},
+            {x: 900, y: 380}, {x: 950, y: 200},
+            {x: 1000, y: 300}, {x: 1050, y: 300},
+            // Third section
+            {x: 1250, y: 380}, {x: 1300, y: 380},
+            {x: 1350, y: 230},
+            {x: 1450, y: 300}, {x: 1500, y: 300},
+            // Fourth section
+            {x: 1650, y: 380}, {x: 1700, y: 380}, {x: 1750, y: 380},
+            {x: 1800, y: 300}, {x: 1850, y: 300},
+            {x: 1750, y: 170},
+            // Fifth section
+            {x: 2000, y: 380}, {x: 2050, y: 380},
+            {x: 2100, y: 300},
+            {x: 2300, y: 380}, {x: 2350, y: 380},
+            {x: 2400, y: 380}, {x: 2450, y: 380},
+            // Sixth section
+            {x: 2600, y: 380}, {x: 2650, y: 380},
+            {x: 2700, y: 380},
+            {x: 2800, y: 200},
+            {x: 2900, y: 300}, {x: 2950, y: 300},
+            // Seventh section
+            {x: 3100, y: 300}, {x: 3150, y: 300},
+            {x: 3200, y: 300},
+            {x: 3350, y: 230},
+            {x: 3450, y: 380}, {x: 3500, y: 380},
+            {x: 3500, y: 150},
+            // Eighth section
+            {x: 3750, y: 380},
+            {x: 3850, y: 270},
+            {x: 3950, y: 300},
+            // Ninth section
+            {x: 4200, y: 380}, {x: 4250, y: 380}, {x: 4300, y: 380},
+            {x: 4350, y: 300}, {x: 4400, y: 300},
+            {x: 4500, y: 230},
+            // Tenth section
+            {x: 4700, y: 380}, {x: 4750, y: 380},
+            {x: 4850, y: 270},
+            {x: 4950, y: 300},
+            // Eleventh section
+            {x: 5250, y: 380},
+            {x: 5350, y: 300}, {x: 5400, y: 300},
+            {x: 5500, y: 230},
+            // Twelfth section
+            {x: 5700, y: 380}, {x: 5750, y: 380},
+            {x: 5850, y: 270},
+            {x: 5950, y: 300},
+            // Thirteenth section
+            {x: 6250, y: 380}, {x: 6300, y: 380},
+            {x: 6350, y: 380},
+            {x: 6400, y: 300},
+            {x: 6500, y: 230},
+            // Fourteenth section
+            {x: 6750, y: 380},
+            {x: 6850, y: 270},
+            {x: 6950, y: 300},
+            // Final section
+            {x: 7200, y: 380}, {x: 7250, y: 380}, {x: 7300, y: 380},
+            {x: 7350, y: 380},
+        ];
+
+        ringPositions.forEach(r => {
+            rings.push({
+                x: r.x, y: r.y, w: 20, h: 20,
+                collected: false,
+                animTimer: Math.random() * Math.PI * 2
+            });
+        });
+
+        // Enemies (Gumballs / Moles)
+        const enemyPositions = [
+            {x: 400, y: H - 95},
+            {x: 800, y: H - 95},
+            {x: 1050, y: H - 95},
+            {x: 1400, y: H - 95},
+            {x: 1700, y: H - 95},
+            {x: 2050, y: H - 95},
+            {x: 2400, y: H - 95},
+            {x: 2700, y: H - 95},
+            {x: 3050, y: H - 95},
+            {x: 3400, y: H - 95},
+            {x: 3650, y: H - 95},
+            {x: 3900, y: H - 95},
+            {x: 4250, y: H - 95},
+            {x: 4550, y: H - 95},
+            {x: 4850, y: H - 95},
+            {x: 5150, y: H - 95},
+            {x: 5400, y: H - 95},
+            {x: 5750, y: H - 95},
+            {x: 6050, y: H - 95},
+            {x: 6350, y: H - 95},
+            {x: 6600, y: H - 95},
+            {x: 6900, y: H - 95},
+            {x: 7250, y: H - 95},
+        ];
+
+        enemyPositions.forEach(e => {
+            enemies.push({
+                x: e.x, y: e.y,
+                width: 35, height: 35,
+                vx: -1.5,
+                alive: true,
+                animFrame: 0,
+                animTimer: 0,
+                squishTimer: 0,
+            });
+        });
+
+        // Springs
+        const springPositions = [
+            {x: 620, y: H - 70},
+            {x: 1150, y: H - 70},
+            {x: 1550, y: H - 70},
+            {x: 2150, y: H - 70},
+            {x: 2850, y: H - 70},
+            {x: 3550, y: H - 70},
+            {x: 4400, y: H - 70},
+            {x: 5100, y: H - 70},
+            {x: 5850, y: H - 70},
+            {x: 6450, y: H - 70},
+            {x: 7050, y: H - 70},
+        ];
+
+        springPositions.forEach(s => {
+            springs.push({
+                x: s.x, y: s.y, w: 30, h: 20,
+                compressed: false,
+                compressTimer: 0,
+            });
+        });
+
+        // Goal post
+        goal = {
+            x: 7700, y: H - 210,
+            width: 40, height: 150,
+            reached: false,
+            animTimer: 0,
+        };
+
+        // Clouds
+        for (let i = 0; i < 40; i++) {
+            clouds.push({
+                x: Math.random() * game.levelWidth,
+                y: 30 + Math.random() * 150,
+                w: 60 + Math.random() * 100,
+                speed: 0.2 + Math.random() * 0.3,
+            });
+        }
+
+        // Background hills
+        for (let i = 0; i < 30; i++) {
+            hills.push({
+                x: i * 400 + Math.random() * 200,
+                w: 200 + Math.random() * 300,
+                h: 80 + Math.random() * 120,
+            });
+        }
+
+        // Decorations (flowers, bushes)
+        for (let i = 0; i < 60; i++) {
+            decorations.push({
+                x: Math.random() * game.levelWidth,
+                type: Math.random() > 0.5 ? 'flower' : 'bush',
+                size: 5 + Math.random() * 15,
+                color: ['#FF6B6B', '#FFD93D', '#6BCB77', '#4D96FF'][Math.floor(Math.random() * 4)],
+            });
+        }
+    }
+
+    // ============== PARTICLES ==============
+    function addParticle(x, y, type) {
+        for (let i = 0; i < (type === 'ring' ? 5 : type === 'stomp' ? 8 : type === 'dust' ? 3 : 10); i++) {
+            game.particles.push({
+                x, y,
+                vx: (Math.random() - 0.5) * (type === 'ring' ? 4 : 6),
+                vy: -Math.random() * (type === 'ring' ? 5 : 8) - 2,
+                life: type === 'ring' ? 20 : type === 'stomp' ? 25 : 15,
+                maxLife: type === 'ring' ? 20 : type === 'stomp' ? 25 : 15,
+                color: type === 'ring' ? '#FFD700' : type === 'stomp' ? '#FFFFFF' : type === 'dust' ? '#AAAAAA' : '#00AAFF',
+                size: type === 'ring' ? 3 : type === 'stomp' ? 4 : 3,
+                type,
+            });
+        }
+    }
+
+    // ============== DRAWING HELPERS ==============
+    function drawSonic(x, y) {
+        const sx = x - sonic.width / 2;
+        const sy = y - sonic.height;
+        const f = sonic.facing;
+
+        ctx.save();
+        ctx.translate(sx + sonic.width / 2, sy + sonic.height / 2);
+
+        if (sonic.rolling && sonic.grounded) {
+            // Spinning ball
+            sonic.spinAngle += 0.3;
+            ctx.rotate(sonic.spinAngle);
+            // Blue ball
+            ctx.beginPath();
+            ctx.arc(0, 0, sonic.width / 2 + 2, 0, Math.PI * 2);
+            const grad = ctx.createRadialGradient(-5, -5, 0, 0, 0, sonic.width / 2 + 2);
+            grad.addColorStop(0, '#4488FF');
+            grad.addColorStop(1, '#0044CC');
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.strokeStyle = '#002288';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        } else {
+            // Body
+            ctx.rotate(f * 0.1);
+
+            // Body (blue circle)
+            ctx.beginPath();
+            ctx.arc(0, 5, sonic.width / 2 + 2, 0, Math.PI * 2);
+            const grad = ctx.createRadialGradient(-3, 0, 0, 0, 5, sonic.width / 2 + 2);
+            grad.addColorStop(0, '#4488FF');
+            grad.addColorStop(1, '#0044CC');
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.strokeStyle = '#002288';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Belly
+            ctx.beginPath();
+            ctx.arc(0, 10, sonic.width / 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#FFDDBB';
+            ctx.fill();
+
+            // Head spikes
+            ctx.fillStyle = '#0044CC';
+            for (let i = 0; i < 3; i++) {
+                const angle = (-0.5 + i * 0.5) * Math.PI * f - 0.3 * f;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(angle) * 10 * f, -10 + Math.sin(angle) * 10);
+                ctx.lineTo(Math.cos(angle - 0.3) * 18 * f, -15 + Math.sin(angle - 0.3) * 15);
+                ctx.lineTo(Math.cos(angle + 0.3) * 18 * f, -15 + Math.sin(angle + 0.3) * 15);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Eyes
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.ellipse(4 * f, -5, 6, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#002288';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Pupils
+            ctx.fillStyle = '#228822';
+            ctx.beginPath();
+            ctx.arc(5 * f, -4, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(5.5 * f, -4, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Nose
+            ctx.fillStyle = '#111';
+            ctx.beginPath();
+            ctx.arc(8 * f, 0, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Shoes
+            const legOffset = sonic.grounded ? Math.sin(sonic.animFrame * 0.3) * 5 : 3;
+            ctx.fillStyle = '#FF0000';
+            // Left shoe
+            ctx.beginPath();
+            ctx.ellipse(-5, 18 + legOffset, 7, 5, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#CC0000';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // Right shoe
+            ctx.beginPath();
+            ctx.ellipse(5, 18 - legOffset, 7, 5, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#CC0000';
+            ctx.stroke();
+
+            // Shoe stripe
+            ctx.fillStyle = 'white';
+            ctx.fillRect(-8, 16 + legOffset, 6, 2);
+            ctx.fillRect(2, 16 - legOffset, 6, 2);
+        }
+
+        ctx.restore();
+    }
+
+    function drawRing(x, y, collected, animTimer) {
+        if (collected) return;
+        const scale = 1 + Math.sin(animTimer) * 0.1;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(scale, 1);
+
+        // Ring
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Inner shine
+        ctx.beginPath();
+        ctx.arc(-2, -2, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFF8DC';
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawEnemy(e) {
+        if (!e.alive && e.squishTimer <= 0) return;
+        const x = e.x;
+        const y = e.y;
+
+        if (!e.alive) {
+            // Squished
+            ctx.fillStyle = '#8B4513';
+            ctx.beginPath();
+            ctx.ellipse(x, y + e.height / 2, e.width / 2, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            return;
+        }
+
+        // Ball shape
+        ctx.beginPath();
+        ctx.arc(x, y, e.width / 2, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(x - 3, y - 3, 0, x, y, e.width / 2);
+        grad.addColorStop(0, '#AA6633');
+        grad.addColorStop(1, '#553311');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = '#331100';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Spikes
+        ctx.fillStyle = '#8B4513';
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2 + e.animFrame * 0.05;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(angle) * 12, y + Math.sin(angle) * 12);
+            ctx.lineTo(x + Math.cos(angle - 0.2) * 20, y + Math.sin(angle - 0.2) * 20);
+            ctx.lineTo(x + Math.cos(angle + 0.2) * 20, y + Math.sin(angle + 0.2) * 20);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Eyes
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(x - 5, y - 3, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 5, y - 3, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(x - 4, y - 3, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 6, y - 3, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function drawSpring(s) {
+        const x = s.x;
+        const y = s.y;
+        const h = s.compressed ? 8 : 20;
+
+        // Base
+        ctx.fillStyle = '#CC3333';
+        ctx.fillRect(x - 15, y + 20 - h, 30, h);
+
+        // Top
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(x - 18, y + 20 - h - 5, 36, 5);
+
+        // Coil lines
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) {
+            const ly = y + 15 - h + i * 5;
+            ctx.beginPath();
+            ctx.moveTo(x - 10, ly);
+            ctx.lineTo(x + 10, ly);
+            ctx.stroke();
+        }
+    }
+
+    function drawGoal(g) {
+        const x = g.x;
+        const y = g.y;
+
+        // Pole
+        ctx.fillStyle = '#888';
+        ctx.fillRect(x - 3, y, 6, g.height);
+
+        // Ring on top
+        g.animTimer += 0.05;
+        const r = 15 + Math.sin(g.animTimer) * 2;
+        ctx.beginPath();
+        ctx.arc(x, y - 5, r, 0, Math.PI * 2);
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Flag
+        ctx.fillStyle = g.reached ? '#00FF00' : '#FF0000';
+        ctx.beginPath();
+        ctx.moveTo(x + 3, y + 10);
+        ctx.lineTo(x + 30 + Math.sin(g.animTimer * 2) * 3, y + 20);
+        ctx.lineTo(x + 3, y + 35);
+        ctx.closePath();
+        ctx.fill();
+
+        // "GOAL" text
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('GOAL', x, y - 25);
+    }
+
+    function drawCloud(cloud) {
+        const x = cloud.x;
+        const y = cloud.y;
+        const w = cloud.w;
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.beginPath();
+        ctx.arc(x, y, w * 0.25, 0, Math.PI * 2);
+        ctx.arc(x + w * 0.25, y - w * 0.1, w * 0.3, 0, Math.PI * 2);
+        ctx.arc(x + w * 0.5, y, w * 0.25, 0, Math.PI * 2);
+        ctx.arc(x + w * 0.25, y + w * 0.05, w * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function drawHill(hill) {
+        const x = hill.x;
+        const baseY = H - 60;
+
+        ctx.fillStyle = '#4A8C3F';
+        ctx.beginPath();
+        ctx.moveTo(x - hill.w / 2, baseY);
+        ctx.quadraticCurveTo(x, baseY - hill.h, x + hill.w / 2, baseY);
+        ctx.fill();
+
+        // Checkerboard pattern hint
+        ctx.fillStyle = '#3D7A34';
+        for (let i = 0; i < 5; i++) {
+            for (let j = 0; j < 3; j++) {
+                if ((i + j) % 2 === 0) {
+                    const px = x - hill.w / 4 + i * hill.w / 10;
+                    const py = baseY - hill.h * 0.3 + j * hill.h * 0.15;
+                    ctx.fillRect(px, py, hill.w / 12, hill.h * 0.1);
+                }
+            }
+        }
+    }
+
+    function drawGround(platform) {
+        const x = platform.x;
+        const y = platform.y;
+        const w = platform.w;
+        const h = platform.h;
+
+        // Top grass
+        ctx.fillStyle = '#4A8C3F';
+        ctx.fillRect(x, y, w, 15);
+
+        // Dirt
+        const dirtGrad = ctx.createLinearGradient(x, y + 15, x, y + h);
+        dirtGrad.addColorStop(0, '#8B6914');
+        dirtGrad.addColorStop(1, '#5C4510');
+        ctx.fillStyle = dirtGrad;
+        ctx.fillRect(x, y + 15, w, h - 15);
+
+        // Checkerboard pattern
+        const tileSize = 20;
+        for (let tx = x; tx < x + w; tx += tileSize) {
+            for (let ty = y + 20; ty < y + h; ty += tileSize) {
+                if ((Math.floor(tx / tileSize) + Math.floor(ty / tileSize)) % 2 === 0) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                    ctx.fillRect(tx, ty, tileSize, tileSize);
+                }
+            }
+        }
+
+        // Grass tufts
+        ctx.fillStyle = '#5CBF4F';
+        for (let gx = x; gx < x + w; gx += 15) {
+            ctx.beginPath();
+            ctx.moveTo(gx, y);
+            ctx.lineTo(gx + 3, y - 5);
+            ctx.lineTo(gx + 6, y);
+            ctx.fill();
+        }
+    }
+
+    function drawFloatingPlatform(p) {
+        const x = p.x;
+        const y = p.y;
+        const w = p.w;
+
+        // Top (grass)
+        ctx.fillStyle = '#4A8C3F';
+        ctx.fillRect(x, y, w, 6);
+
+        // Body (dirt with checkerboard)
+        ctx.fillStyle = '#8B6914';
+        ctx.fillRect(x, y + 6, w, p.h - 6);
+
+        const tileSize = 10;
+        for (let tx = x; tx < x + w; tx += tileSize) {
+            for (let ty = y + 6; ty < y + p.h; ty += tileSize) {
+                if ((Math.floor(tx / tileSize) + Math.floor(ty / tileSize)) % 2 === 0) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                    ctx.fillRect(tx, ty, tileSize, tileSize);
+                }
+            }
+        }
+
+        // Bottom edge
+        ctx.fillStyle = '#5C4510';
+        ctx.fillRect(x, y + p.h - 4, w, 4);
+    }
+
+    // ============== PHYSICS & COLLISION ==============
+    function rectOverlap(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function pointInRect(px, py, r) {
+        return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+    }
+
+    // ============== GAME UPDATE ==============
+    function update() {
+        if (game.state !== 'playing') return;
+
+        // Sonic physics
+        const boosting = isBoost() && sonic.grounded;
+        const maxSpd = boosting ? sonic.boostSpeed : sonic.maxSpeed;
+
+        if (isLeft()) {
+            sonic.vx -= sonic.acceleration;
+            sonic.facing = -1;
+        }
+        if (isRight()) {
+            sonic.vx += sonic.acceleration;
+            sonic.facing = 1;
+        }
+
+        if (!isLeft() && !isRight()) {
+            sonic.vx *= sonic.friction;
+            if (Math.abs(sonic.vx) < 0.1) sonic.vx = 0;
+        }
+
+        sonic.vx = Math.max(-maxSpd, Math.min(maxSpd, sonic.vx));
+
+        // Jump
+        if (isJump() && sonic.grounded && !sonic.jumping) {
+            sonic.vy = sonic.jumpForce;
+            sonic.grounded = false;
+            sonic.jumping = true;
+            sonic.rolling = false;
+            audio.play('jump');
+            addParticle(sonic.x, sonic.y, 'dust');
+        }
+
+        if (!isJump()) {
+            sonic.jumping = false;
+        }
+
+        // Roll
+        sonic.rolling = sonic.grounded && isBoost() && Math.abs(sonic.vx) > 3;
+
+        // Gravity
+        sonic.vy += 0.6;
+        if (sonic.vy > 15) sonic.vy = 15;
+
+        // Move X
+        sonic.x += sonic.vx;
+
+        // Collide X with platforms
+        sonic.grounded = false;
+        const sonicRect = {
+            x: sonic.x - sonic.width / 2,
+            y: sonic.y - sonic.height,
+            w: sonic.width,
+            h: sonic.height
+        };
+
+        for (const p of platforms) {
+            if (rectOverlap(sonicRect, p)) {
+                if (sonic.vx > 0) {
+                    sonic.x = p.x - sonic.width / 2;
+                } else if (sonic.vx < 0) {
+                    sonic.x = p.x + p.w + sonic.width / 2;
+                }
+                sonic.vx = 0;
+            }
+        }
+
+        // Move Y
+        sonic.y += sonic.vy;
+
+        // Collide Y with platforms
+        for (const p of platforms) {
+            if (rectOverlap(sonicRect, p)) {
+                if (sonic.vy > 0) {
+                    sonic.y = p.y;
+                    sonic.vy = 0;
+                    sonic.grounded = true;
+                } else if (sonic.vy < 0) {
+                    sonic.y = p.y + p.h + sonic.height;
+                    sonic.vy = 0;
+                }
+            }
+        }
+
+        // Springs
+        for (const s of springs) {
+            if (s.compressTimer > 0) s.compressTimer--;
+            else s.compressed = false;
+
+            const springRect = { x: s.x - s.w / 2, y: s.y, w: s.w, h: s.h };
+            if (sonic.vy > 0 && pointInRect(sonic.x, sonic.y, springRect)) {
+                sonic.vy = -16;
+                sonic.grounded = false;
+                s.compressed = true;
+                s.compressTimer = 15;
+                audio.play('boost');
+                addParticle(sonic.x, sonic.y, 'dust');
+            }
+        }
+
+        // Collect rings
+        for (const r of rings) {
+            if (r.collected) continue;
+            r.animTimer += 0.08;
+            const ringRect = { x: r.x - 10, y: r.y - 10, w: 20, h: 20 };
+            if (pointInRect(sonic.x, sonic.y, ringRect)) {
+                r.collected = true;
+                game.rings++;
+                game.score += 10;
+                audio.play('ring');
+                addParticle(r.x, r.y, 'ring');
+            }
+        }
+
+        // Enemies
+        for (const e of enemies) {
+            if (!e.alive) {
+                if (e.squishTimer > 0) e.squishTimer--;
+                continue;
+            }
+            e.animFrame++;
+
+            // Only update enemies near camera
+            if (Math.abs(e.x - game.camera.x) > W) continue;
+
+            e.x += e.vx;
+
+            // Enemy platform collision
+            let onGround = false;
+            for (const p of platforms) {
+                if (e.x > p.x && e.x < p.x + p.w && e.y + e.height / 2 >= p.y && e.y + e.height / 2 <= p.y + 10) {
+                    onGround = true;
+                }
+                // Edge detection - turn around at edges
+                if (e.y + e.height / 2 >= p.y - 5 && e.y + e.height / 2 <= p.y + 10) {
+                    if (e.x - e.width / 2 < p.x + 5 && e.vx < 0) {
+                        e.vx = Math.abs(e.vx);
+                    }
+                    if (e.x + e.width / 2 > p.x + p.w - 5 && e.vx > 0) {
+                        e.vx = -Math.abs(e.vx);
+                    }
+                }
+            }
+
+            // Sonic vs enemy
+            const dist = Math.hypot(sonic.x - e.x, sonic.y - e.y);
+            if (dist < 30) {
+                if (sonic.vy > 0 && sonic.y < e.y) {
+                    // Stomp!
+                    e.alive = false;
+                    e.squishTimer = 30;
+                    sonic.vy = -8;
+                    game.score += 100;
+                    audio.play('stomp');
+                    addParticle(e.x, e.y, 'stomp');
+                } else if (game.invincibleTimer <= 0) {
+                    // Hurt!
+                    if (game.rings > 0) {
+                        // Lose rings
+                        game.screenShake = 10;
+                        audio.play('hurt');
+                        game.invincibleTimer = 120;
+                        // Scatter rings
+                        for (let i = 0; i < Math.min(game.rings, 10); i++) {
+                            game.particles.push({
+                                x: sonic.x, y: sonic.y,
+                                vx: (Math.random() - 0.5) * 10,
+                                vy: -Math.random() * 10 - 3,
+                                life: 60,
+                                maxLife: 60,
+                                color: '#FFD700',
+                                size: 5,
+                                type: 'ring',
+                            });
+                        }
+                        game.rings = Math.max(0, game.rings - 10);
+                    } else {
+                        // Die
+                        game.lives--;
+                        audio.play('hurt');
+                        if (game.lives <= 0) {
+                            game.state = 'gameover';
+                            showGameOver();
+                        } else {
+                            // Respawn
+                            sonic.x = Math.max(game.camera.x + 100, 100);
+                            sonic.y = 200;
+                            sonic.vx = 0;
+                            sonic.vy = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Invincibility timer
+        if (game.invincibleTimer > 0) game.invincibleTimer--;
+
+        // Goal
+        if (goal && !goal.reached) {
+            const dist = Math.hypot(sonic.x - goal.x, sonic.y - (goal.y + 50));
+            if (dist < 50) {
+                goal.reached = true;
+                game.state = 'win';
+                game.score += 500 + game.rings * 100;
+                audio.play('levelup');
+                showWin();
+            }
+        }
+
+        // Fall off screen
+        if (sonic.y > H + 100) {
+            game.lives--;
+            audio.play('hurt');
+            if (game.lives <= 0) {
+                game.state = 'gameover';
+                showGameOver();
+            } else {
+                sonic.x = Math.max(game.camera.x + 100, 100);
+                sonic.y = 200;
+                sonic.vx = 0;
+                sonic.vy = 0;
+            }
+        }
+
+        // Camera
+        const targetCamX = sonic.x - W / 3;
+        game.camera.x += (targetCamX - game.camera.x) * 0.1;
+        game.camera.x = Math.max(0, Math.min(game.levelWidth - W, game.camera.x));
+
+        // Particles
+        for (let i = game.particles.length - 1; i >= 0; i--) {
+            const p = game.particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.2;
+            p.life--;
+            if (p.life <= 0) game.particles.splice(i, 1);
+        }
+
+        // Screen shake
+        if (game.screenShake > 0) game.screenShake--;
+
+        // Animation
+        sonic.animTimer++;
+        if (Math.abs(sonic.vx) > 0.5) {
+            sonic.animFrame += Math.abs(sonic.vx) * 0.5;
+        }
+
+        // Trail
+        if (Math.abs(sonic.vx) > 4) {
+            sonic.trail.push({ x: sonic.x, y: sonic.y, life: 10 });
+        }
+        for (let i = sonic.trail.length - 1; i >= 0; i--) {
+            sonic.trail[i].life--;
+            if (sonic.trail[i].life <= 0) sonic.trail.splice(i, 1);
+        }
+
+        // Update UI
+        document.getElementById('score-display').textContent = 'SCORE: ' + game.score;
+        document.getElementById('rings-display').textContent = 'RINGS: ' + game.rings;
+        document.getElementById('lives-display').textContent = 'LIVES: ' + game.lives;
+    }
+
+    // ============== RENDER ==============
+    function render() {
+        ctx.clearRect(0, 0, W, H);
+
+        // Sky gradient
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+        skyGrad.addColorStop(0, '#1E90FF');
+        skyGrad.addColorStop(0.5, '#87CEEB');
+        skyGrad.addColorStop(1, '#B0E0E6');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, W, H);
+
+        // Screen shake
+        let shakeX = 0, shakeY = 0;
+        if (game.screenShake > 0) {
+            shakeX = (Math.random() - 0.5) * game.screenShake;
+            shakeY = (Math.random() - 0.5) * game.screenShake;
+        }
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+
+        // Camera transform
+        ctx.save();
+        ctx.translate(-game.camera.x, 0);
+
+        // Hills (parallax)
+        for (const h of hills) {
+            const parallaxX = h.x - game.camera.x * 0.3;
+            if (parallaxX > -h.w && parallaxX < W + h.w) {
+                drawHill({x: parallaxX, w: h.w, h: h.h});
+            }
+        }
+
+        // Clouds (parallax)
+        for (const c of clouds) {
+            c.x += c.speed;
+            if (c.x > game.levelWidth + 200) c.x = -200;
+            const parallaxX = c.x - game.camera.x * 0.2;
+            if (parallaxX > -200 && parallaxX < W + 200) {
+                drawCloud({x: parallaxX, y: c.y, w: c.w});
+            }
+        }
+
+        // Decorations
+        for (const d of decorations) {
+            if (d.x < game.camera.x - 50 || d.x > game.camera.x + W + 50) continue;
+            if (d.type === 'flower') {
+                ctx.fillStyle = d.color;
+                ctx.beginPath();
+                ctx.arc(d.x, H - 65, d.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#4A8C3F';
+                ctx.fillRect(d.x - 1, H - 65, 2, d.size);
+            } else {
+                ctx.fillStyle = '#2D6B2E';
+                ctx.beginPath();
+                ctx.arc(d.x, H - 60, d.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Platforms
+        for (const p of platforms) {
+            if (p.x + p.w < game.camera.x - 50 || p.x > game.camera.x + W + 50) continue;
+            if (p.type === 'ground') drawGround(p);
+            else drawFloatingPlatform(p);
+        }
+
+        // Springs
+        for (const s of springs) {
+            if (s.x < game.camera.x - 50 || s.x > game.camera.x + W + 50) continue;
+            drawSpring(s);
+        }
+
+        // Rings
+        for (const r of rings) {
+            if (r.collected) continue;
+            if (r.x < game.camera.x - 50 || r.x > game.camera.x + W + 50) continue;
+            drawRing(r.x, r.y, false, r.animTimer);
+        }
+
+        // Enemies
+        for (const e of enemies) {
+            if (e.x < game.camera.x - 100 || e.x > game.camera.x + W + 100) continue;
+            drawEnemy(e);
+        }
+
+        // Goal
+        if (goal) drawGoal(goal);
+
+        // Sonic trail
+        for (const t of sonic.trail) {
+            const alpha = t.life / 10 * 0.3;
+            ctx.fillStyle = `rgba(0, 100, 255, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Sonic (invincibility blink)
+        if (game.invincibleTimer <= 0 || Math.floor(game.invincibleTimer / 4) % 2 === 0) {
+            drawSonic(sonic.x, sonic.y);
+        }
+
+        // Particles
+        for (const p of game.particles) {
+            const alpha = p.life / p.maxLife;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            if (p.type === 'ring') {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            }
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.restore(); // camera
+        ctx.restore(); // shake
+
+        // Speed lines when boosting
+        if (isBoost() && Math.abs(sonic.vx) > 5) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 5; i++) {
+                const lx = Math.random() * W;
+                const ly = Math.random() * H;
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(lx - 30 - Math.random() * 20, ly);
+                ctx.stroke();
+            }
+        }
+    }
+
+    // ============== GAME FLOW ==============
+    function startGame() {
+        audio.init();
+        game.state = 'playing';
+        game.score = 0;
+        game.rings = 0;
+        game.lives = 3;
+        game.camera.x = 0;
+        game.particles = [];
+        game.screenShake = 0;
+        game.invincibleTimer = 0;
+        game.goalReached = false;
+
+        sonic.x = 100;
+        sonic.y = 300;
+        sonic.vx = 0;
+        sonic.vy = 0;
+        sonic.grounded = false;
+        sonic.jumping = false;
+        sonic.rolling = false;
+        sonic.facing = 1;
+        sonic.trail = [];
+
+        generateLevel();
+
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('game-over-screen').style.display = 'none';
+    }
+
+    function showGameOver() {
+        document.getElementById('game-over-title').textContent = 'GAME OVER';
+        document.getElementById('final-score').textContent = 'Score: ' + game.score;
+        document.getElementById('final-rings').textContent = 'Rings: ' + game.rings;
+        document.getElementById('game-over-screen').style.display = 'flex';
+    }
+
+    function showWin() {
+        document.getElementById('game-over-title').textContent = 'YOU WIN!';
+        document.getElementById('game-over-title').style.color = '#FFD700';
+        document.getElementById('final-score').textContent = 'Score: ' + game.score;
+        document.getElementById('final-rings').textContent = 'Rings: ' + game.rings;
+        document.getElementById('game-over-screen').style.display = 'flex';
+    }
+
+    // ============== GAME LOOP ==============
+    function gameLoop() {
+        update();
+        render();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ============== INIT ==============
+    document.getElementById('start-btn').addEventListener('click', startGame);
+    document.getElementById('restart-btn').addEventListener('click', startGame);
+
+    // Generate initial level for background
+    generateLevel();
+
+    // Start the game loop
+    gameLoop();
+    </script>
+</body>
+</html>
