@@ -1128,51 +1128,69 @@
                 }
             }
 
-            // Sonic vs enemy
-            const dist = Math.hypot(sonic.x - e.x, sonic.y - e.y);
-            if (dist < 30) {
-                if (sonic.vy > 0 && sonic.y < e.y) {
+            // Sonic vs enemy — use rectangle collision for accuracy
+            const sonicLeft = sonic.x - sonic.width / 2 + 4;
+            const sonicRight = sonic.x + sonic.width / 2 - 4;
+            const sonicTop = sonic.y - sonic.height + 4;
+            const sonicBottom = sonic.y;
+            const enemyLeft = e.x - e.width / 2 + 2;
+            const enemyRight = e.x + e.width / 2 - 2;
+            const enemyTop = e.y - e.height / 2;
+            const enemyBottom = e.y + e.height / 2;
+
+            const overlapX = sonicRight > enemyLeft && sonicLeft < enemyRight;
+            const overlapY = sonicBottom > enemyTop && sonicTop < enemyBottom;
+
+            if (overlapX && overlapY) {
+                // Check if stomping: Sonic must be falling, above enemy center, and moving down
+                const sonicAboveCenter = sonic.y < e.y + 5;
+                const sonicFalling = sonic.vy >= 0;
+                const sonicBottomNearTop = sonicBottom < enemyTop + 15;
+
+                if (sonicFalling && sonicAboveCenter && sonicBottomNearTop) {
                     // Stomp!
                     e.alive = false;
                     e.squishTimer = 30;
-                    sonic.vy = -8;
+                    sonic.vy = -9;
+                    sonic.grounded = false;
                     game.score += 100;
                     audio.play('stomp');
                     addParticle(e.x, e.y, 'stomp');
-                } else if (game.invincibleTimer <= 0) {
-                    // Hurt!
+                } else if (game.invincibleTimer <= 0 && !sonicFalling) {
+                    // Hurt — only if not already falling (prevents double-hit)
+                    game.screenShake = 8;
+                    audio.play('hurt');
+                    game.invincibleTimer = 150; // 2.5 seconds of invincibility
+
                     if (game.rings > 0) {
-                        // Lose rings
-                        game.screenShake = 10;
-                        audio.play('hurt');
-                        game.invincibleTimer = 120;
-                        // Scatter rings
-                        for (let i = 0; i < Math.min(game.rings, 10); i++) {
+                        // Lose a few rings, scatter only a handful
+                        const lost = Math.min(5, game.rings);
+                        game.rings -= lost;
+                        for (let i = 0; i < lost; i++) {
                             game.particles.push({
                                 x: sonic.x, y: sonic.y,
-                                vx: (Math.random() - 0.5) * 10,
-                                vy: -Math.random() * 10 - 3,
-                                life: 60,
-                                maxLife: 60,
+                                vx: (Math.random() - 0.5) * 8,
+                                vy: -Math.random() * 8 - 2,
+                                life: 50,
+                                maxLife: 50,
                                 color: '#FFD700',
-                                size: 5,
+                                size: 4,
                                 type: 'ring',
                             });
                         }
-                        game.rings = Math.max(0, game.rings - 10);
                     } else {
                         // Die
                         game.lives--;
-                        audio.play('hurt');
                         if (game.lives <= 0) {
                             game.state = 'gameover';
                             showGameOver();
                         } else {
-                            // Respawn
+                            // Respawn with grace period
                             sonic.x = Math.max(game.camera.x + 100, 100);
                             sonic.y = 200;
                             sonic.vx = 0;
                             sonic.vy = 0;
+                            game.invincibleTimer = 90; // 1.5s grace on respawn
                         }
                     }
                 }
