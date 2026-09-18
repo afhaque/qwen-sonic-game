@@ -1029,34 +1029,63 @@
         if (sonic.vy > 15) sonic.vy = 15;
 
         // Move X
+        const prevX = sonic.x;
         sonic.x += sonic.vx;
 
-        // Collide X with platforms
-        sonic.grounded = false;
-        const sonicRect = {
+        // Revert X if we moved INTO a platform (not if we were already overlapping)
+        const sonicRectAfterX = {
             x: sonic.x - sonic.width / 2,
+            y: sonic.y - sonic.height,
+            w: sonic.width,
+            h: sonic.height
+        };
+        const sonicRectBeforeX = {
+            x: prevX - sonic.width / 2,
             y: sonic.y - sonic.height,
             w: sonic.width,
             h: sonic.height
         };
 
         for (const p of platforms) {
-            if (rectOverlap(sonicRect, p)) {
+            const afterOverlap = rectOverlap(sonicRectAfterX, p);
+            const beforeOverlap = rectOverlap(sonicRectBeforeX, p);
+
+            // Only push out if we just moved INTO this platform
+            if (afterOverlap && !beforeOverlap) {
                 if (sonic.vx > 0) {
                     sonic.x = p.x - sonic.width / 2;
                 } else if (sonic.vx < 0) {
                     sonic.x = p.x + p.w + sonic.width / 2;
                 }
                 sonic.vx = 0;
+                break;
             }
         }
 
         // Move Y
+        const prevY = sonic.y;
         sonic.y += sonic.vy;
 
         // Collide Y with platforms
+        sonic.grounded = false;
+        const sonicRectAfterY = {
+            x: sonic.x - sonic.width / 2,
+            y: sonic.y - sonic.height,
+            w: sonic.width,
+            h: sonic.height
+        };
+        const sonicRectBeforeY = {
+            x: sonic.x - sonic.width / 2,
+            y: prevY - sonic.height,
+            w: sonic.width,
+            h: sonic.height
+        };
+
         for (const p of platforms) {
-            if (rectOverlap(sonicRect, p)) {
+            const afterOverlap = rectOverlap(sonicRectAfterY, p);
+            const beforeOverlap = rectOverlap(sonicRectBeforeY, p);
+
+            if (afterOverlap && !beforeOverlap) {
                 if (sonic.vy > 0) {
                     sonic.y = p.y;
                     sonic.vy = 0;
