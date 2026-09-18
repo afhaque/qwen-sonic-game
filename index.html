@@ -1188,8 +1188,8 @@
                     game.score += 100;
                     audio.play('stomp');
                     addParticle(e.x, e.y, 'stomp');
-                } else if (game.invincibleTimer <= 0 && !sonicFalling) {
-                    // Hurt — only if not already falling (prevents double-hit)
+                } else if (game.invincibleTimer <= 0) {
+                    // Hurt — any collision that isn't a stomp
                     game.screenShake = 8;
                     audio.play('hurt');
                     game.invincibleTimer = 150; // 2.5 seconds of invincibility
