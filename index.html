@@ -1050,8 +1050,11 @@
             const afterOverlap = rectOverlap(sonicRectAfterX, p);
             const beforeOverlap = rectOverlap(sonicRectBeforeX, p);
 
-            // Only push out if we just moved INTO this platform
-            if (afterOverlap && !beforeOverlap) {
+            // Only push out if we just moved INTO this platform AND Sonic is at platform level
+            // (feet within 10px of platform top) — prevents floating platforms above Sonic
+            // from pushing him sideways while running past them
+            const feetNearPlatformTop = Math.abs(sonic.y - p.y) < 10;
+            if (afterOverlap && !beforeOverlap && feetNearPlatformTop) {
                 if (sonic.vx > 0) {
                     sonic.x = p.x - sonic.width / 2;
                 } else if (sonic.vx < 0) {
